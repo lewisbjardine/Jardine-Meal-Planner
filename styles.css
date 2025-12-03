@@ -709,3 +709,57 @@ main {
     transform: translateY(0);
   }
 }
+/* ===============================
+   WEEKLY MEAL CARDS (Horizontal)
+   =============================== */
+
+#week-days-container {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px;
+  overflow-x: auto;
+}
+
+.day-card {
+  background: #ffffffcc;
+  border-radius: 14px;
+  padding: 16px;
+  width: 180px;
+  min-width: 180px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  backdrop-filter: blur(6px);
+}
+
+.day-card h3 {
+  margin-top: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.recipe-slot {
+  background: #f6f6f6;
+  border-radius: 10px;
+  padding: 10px;
+  min-height: 40px;
+  cursor: pointer;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #444;
+  border: 1px dashed #bbb;
+}
+
+.recipe-slot:hover {
+  background: #e9f5e9;
+  border-color: #5aa96e;
+}
+
+/* Overflow scrolling appearance */
+#week-days-container::-webkit-scrollbar {
+  height: 8px;
+}
+#week-days-container::-webkit-scrollbar-thumb {
+  background: #b5d4b8;
+  border-radius: 4px;
+}
