@@ -1,233 +1,106 @@
-/* ============================================================
-   JARDINE MEAL PLANNER — GLOBAL THEME
-   Clean, modern, centred UI
-============================================================ */
-
-:root {
-  --brand-green: #3b7c47;
-  --brand-green-dark: #2e6037;
-  --brand-bg-light: #f7faef;
-  --brand-bg-gradient: linear-gradient(135deg, #f7faef, #e6f4dc);
-  --text-main: #1c2b1c;
-  --text-soft: #4a5a4a;
-  --card-bg: white;
-  --card-shadow: 0 3px 8px rgba(0,0,0,0.12);
-  --radius: 16px;
-  --radius-small: 10px;
-  --transition: 0.22s ease;
-}
-
 body {
-  margin: 0;
-  padding: 0;
-  background: var(--brand-bg-gradient);
-  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  color: var(--text-main);
+    margin: 0;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #faf8ee;
+    color: #222;
 }
-
-/* ------------------------------------------------------------
-   LAYOUT
------------------------------------------------------------- */
-
-.main-container {
-  max-width: 950px;
-  margin: 0 auto;
-  padding: 24px;
-}
-
-/* ------------------------------------------------------------
-   HEADER / TITLE
------------------------------------------------------------- */
 
 header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 20px;
 }
 
-header img.logo {
-  width: 52px;
-  height: 52px;
+header .logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
 }
 
-header h1 {
-  font-size: 2.2rem;
-  font-weight: 700;
-  margin: 0;
-  color: var(--text-main);
+h1 {
+    margin: 0;
+    font-size: 1.8rem;
 }
-
-/* ------------------------------------------------------------
-   NAVIGATION
------------------------------------------------------------- */
 
 nav {
-  display: flex;
-  gap: 20px;
-  margin-bottom: 30px;
+    display: flex;
+    gap: 20px;
+    padding: 0 20px 20px;
 }
 
 nav a {
-  text-decoration: none;
-  font-size: 1.1rem;
-  color: var(--brand-green-dark);
-  font-weight: 500;
+    color: #006644;
+    text-decoration: none;
+    font-weight: 500;
 }
 
-nav a:hover {
-  text-decoration: underline;
+main {
+    padding: 20px;
 }
 
-/* ------------------------------------------------------------
-   SECTION TITLES
------------------------------------------------------------- */
-
-.section-title {
-  font-size: 1.7rem;
-  font-weight: 600;
-  margin: 36px 0 16px;
-}
-
-/* ------------------------------------------------------------
-   WEEK NAVIGATION
------------------------------------------------------------- */
-
-.week-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.week-btn {
-  background: var(--brand-green);
-  color: white;
-  padding: 8px 14px;
-  border-radius: 20px;
-  border: none;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.week-btn:hover {
-  background: var(--brand-green-dark);
-}
-
-/* ------------------------------------------------------------
-   WEEK DAYS — HORIZONTAL SCROLLING CARDS
------------------------------------------------------------- */
-
-#week-days-container {
-  display: flex;
-  flex-direction: row;
-  gap: 16px;
-  overflow-x: auto;
-  padding-bottom: 10px;
-  scroll-snap-type: x mandatory;
+/* Horizontal weekly cards */
+.week-row {
+    display: flex;
+    gap: 14px;
+    overflow-x: auto;
+    padding-bottom: 10px;
 }
 
 .day-card {
-  background: var(--card-bg);
-  box-shadow: var(--card-shadow);
-  border-radius: var(--radius);
-  padding: 16px;
-  width: 150px;
-  min-width: 150px;
-  flex-shrink: 0;
-  scroll-snap-align: start;
+    min-width: 140px;
+    background: white;
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    cursor: pointer;
+    text-align: center;
 }
 
-.day-title {
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 8px;
+.day-card:hover {
+    background: #f7f7f7;
 }
 
-.recipe-slot {
-  border: 1px dashed #9bb89b;
-  padding: 12px;
-  border-radius: var(--radius-small);
-  background: #f5faf5;
-  min-height: 55px;
-  text-align: center;
-  font-size: 0.9rem;
-  color: var(--text-soft);
-  cursor: pointer;
-  transition: var(--transition);
+/* Buttons */
+button, .btn {
+    background: #1b7a4b;
+    color: white;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.95rem;
 }
 
-.recipe-slot:hover {
-  background: #e7f6e7;
+button:hover {
+    background: #14633b;
 }
 
-/* ------------------------------------------------------------
-   BUTTONS
------------------------------------------------------------- */
-
-.btn-primary {
-  background: var(--brand-green);
-  color: white;
-  border: none;
-  border-radius: 25px;
-  padding: 10px 22px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: var(--transition);
+/* Import area */
+textarea {
+    width: 100%;
+    height: 120px;
+    border-radius: 10px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    resize: vertical;
 }
-
-.btn-primary:hover {
-  background: var(--brand-green-dark);
-}
-
-/* ------------------------------------------------------------
-   RECIPE LIBRARY LIST
------------------------------------------------------------- */
 
 .recipe-card {
-  border-radius: var(--radius);
-  background: var(--card-bg);
-  padding: 14px;
-  box-shadow: var(--card-shadow);
-  margin: 12px 0;
+    background: white;
+    padding: 14px;
+    border-radius: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
 }
 
 .recipe-card-title {
-  font-size: 1.2rem;
-  font-weight: 600;
+    font-size: 1.1rem;
+    font-weight: 600;
 }
 
-.recipe-card img {
-  width: 120px;
-  height: 90px;
-  border-radius: var(--radius-small);
-  object-fit: cover;
-  margin-right: 12px;
-}
-
-/* ------------------------------------------------------------
-   IMPORT AREA
------------------------------------------------------------- */
-
-.import-box textarea {
-  width: 100%;
-  height: 90px;
-  border-radius: var(--radius-small);
-  padding: 10px;
-  border: 1px solid #d0e1d0;
-  font-size: 0.95rem;
-  margin-bottom: 12px;
-}
-
-/* ------------------------------------------------------------
-   FOOTER
------------------------------------------------------------- */
-
-footer {
-  text-align: center;
-  margin-top: 60px;
-  color: var(--text-soft);
-  font-size: 0.9rem;
-  padding-bottom: 20px;
+.recipe-img {
+    width: 100%;
+    border-radius: 12px;
+    margin-top: 10px;
 }
