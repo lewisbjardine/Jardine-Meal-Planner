@@ -2,8 +2,7 @@
 
 // Replace this with YOUR Supabase Edge Functions base URL
 // e.g. https://abcdxyz.supabase.co/functions/v1
-const SUPABASE_FUNCTION_BASE_URL = "https://YOUR_PROJECT_REF.supabase.co/functions/v1";
-
+const SUPABASE_FUNCTION_BASE_URL = "https://tzrmuferszuscavbujbc.supabase.co/functions/v1";
 // LocalStorage key (for offline fallback)
 const STORAGE_KEY = "jardineMealPlanner";
 
