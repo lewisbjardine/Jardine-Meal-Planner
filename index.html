@@ -1,29 +1,52 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Jardine Meal Planner</title>
+  <meta charset="UTF-8" />
+  <title>Jardine Meal Planner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <link rel="stylesheet" href="styles.css" />
+  <!-- PWA basics (keep if you were already using them) -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#1ea672" />
+
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Supabase JS v2 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-
 <body>
+  <div id="app">
+    <header class="top-bar">
+      <div class="brand">
+        <span class="brand-logo">🥕</span>
+        <div class="brand-text">
+          <h1>Jardine Meal Planner</h1>
+          <p>Colourful planning for family tea time</p>
+        </div>
+      </div>
+      <nav class="main-nav">
+        <button class="nav-btn" data-view="planner">Planner</button>
+        <button class="nav-btn" data-view="recipes">Recipes</button>
+        <button class="nav-btn" data-view="import">Add recipes</button>
+      </nav>
+    </header>
 
-<header>
-    <img src="img/placeholder-recipe.jpg" class="logo" alt="Logo">
-    <h1>Jardine Meal Planner</h1>
-</header>
+    <main id="view-root"></main>
 
-<nav>
-    <a href="#" id="nav-this-week">This Week</a>
-    <a href="#" id="nav-4week">4-Week Plan</a>
-    <a href="#" id="nav-recipes">Recipes</a>
-    <a href="#" id="nav-import">Import</a>
-</nav>
+    <footer class="footer">
+      <span>Made for Lewis &amp; Amelia 🥦</span>
+    </footer>
+  </div>
 
-<main id="app"></main>
-
-<script src="app.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // Optional: register service worker if you keep the existing one
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js')
+          .catch(err => console.log('SW registration failed:', err));
+      });
+    }
+  </script>
 </body>
 </html>
