@@ -5,81 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Jardine Meal Planner</title>
 
-    <!-- No caching -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
-
     <link rel="stylesheet" href="styles.css" />
 </head>
 
 <body>
-<div class="main-container">
 
-    <!-- HEADER -->
-    <header>
-        <img src="img/placeholder-recipe.jpg" class="logo" alt="Logo">
-        <h1>Jardine Meal Planner</h1>
-    </header>
+<header>
+    <img src="img/placeholder-recipe.jpg" class="logo" alt="Logo">
+    <h1>Jardine Meal Planner</h1>
+</header>
 
-    <!-- NAVIGATION -->
-    <nav>
-        <a href="#" id="nav-thisweek">This Week</a>
-        <a href="#" id="nav-4week">4-Week Plan</a>
-        <a href="#" id="nav-recipes">Recipes</a>
-        <a href="#" id="nav-import">Import</a>
-    </nav>
+<nav>
+    <a href="#" id="nav-this-week">This Week</a>
+    <a href="#" id="nav-4week">4-Week Plan</a>
+    <a href="#" id="nav-recipes">Recipes</a>
+    <a href="#" id="nav-import">Import</a>
+</nav>
 
-    <!-- THIS WEEK VIEW -->
-    <section id="view-thisweek" class="view-section">
-
-        <h2 class="section-title">This Week</h2>
-
-        <div class="week-controls">
-            <button class="week-btn" id="prev-week-btn">&lt; Week</button>
-            <span id="week-label">Week 1</span>
-            <button class="week-btn" id="next-week-btn">Week &gt;</button>
-        </div>
-
-        <div id="week-days-container">
-            <!-- cards rendered by JS -->
-        </div>
-
-        <button class="btn-primary" id="weekly-ingredients-btn">Weekly Ingredients</button>
-    </section>
-
-    <!-- 4-WEEK VIEW -->
-    <section id="view-4week" class="view-section" style="display:none;">
-        <h2 class="section-title">4-Week Plan</h2>
-        <div id="four-week-container"></div>
-    </section>
-
-    <!-- RECIPE LIBRARY -->
-    <section id="view-recipes" class="view-section" style="display:none;">
-        <h2 class="section-title">Recipe Library</h2>
-        <div id="recipe-list"></div>
-    </section>
-
-    <!-- IMPORT RECIPES -->
-    <section id="view-import" class="view-section" style="display:none;">
-        <h2 class="section-title">Import Recipes</h2>
-        <p>Paste one or more BBC Good Food URLs (one per line):</p>
-
-        <div class="import-box">
-            <textarea id="import-textarea" placeholder="https://www.bbcgoodfood.com/..."></textarea>
-            <button class="btn-primary" id="import-btn">Import Recipes</button>
-        </div>
-
-        <div id="import-results"></div>
-    </section>
-
-    <footer>
-        © Jardine Meal Planner
-    </footer>
-
-</div>
+<main id="app"></main>
 
 <script src="app.js"></script>
-
 </body>
 </html>
