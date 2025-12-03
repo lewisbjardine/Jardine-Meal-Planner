@@ -3,6 +3,11 @@
 // Replace this with YOUR Supabase Edge Functions base URL
 // e.g. https://abcdxyz.supabase.co/functions/v1
 const SUPABASE_FUNCTION_BASE_URL = "https://tzrmuferszuscavbujbc.supabase.co/functions/v1";
+const SUPABASE_FUNCTION_BASE_URL =
+  "https://tzrmuferszuscavbujbc.supabase.co/functions/v1";
+
+// NEW: your public anon key from Supabase Settings → API
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR6cm11ZmVyc3p1c2NhdmJ1amJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ3MTE0MDMsImV4cCI6MjA4MDI4NzQwM30.aRPM29TX1iv2dTRYQNxAGtu_LLAIbfzuKIWRcgNQaRE";
 // LocalStorage key (for offline fallback)
 const STORAGE_KEY = "jardineMealPlanner";
 
