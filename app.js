@@ -529,16 +529,15 @@ async function generateSmartIngredientsForWeek() {
   }
 
   try {
-    const res = await fetch(
-      `${SUPABASE_FUNCTION_BASE_URL}/aggregate-ingredients`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({ recipes })
-      }
+const res = await fetch(`${SUPABASE_FUNCTION_BASE_URL}/import-recipe`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+  },
+  body: JSON.stringify({ urls: [url] })
+});
+  
     );
     if (!res.ok) throw new Error("AI aggregation failed");
     const aggregated = await res.json();
