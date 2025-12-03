@@ -7,7 +7,7 @@
 // IMPORTANT: put your real anon key in this constant *locally*.
 // Don't commit secrets in public repos if you can avoid it.
 const SUPABASE_URL = "https://tzrmuferszuscavbujbc.supabase.co";
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY_HERE"; // <- paste here BEFORE committing if you're happy with it being public
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR6cm11ZmVyc3p1c2NhdmJ1amJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ3MTE0MDMsImV4cCI6MjA4MDI4NzQwM30.aRPM29TX1iv2dTRYQNxAGtu_LLAIbfzuKIWRcgNQaRE"; // <- paste here BEFORE committing if you're happy with it being public
 
 // Table + row key
 const STATE_TABLE = "mealplanner_state";
