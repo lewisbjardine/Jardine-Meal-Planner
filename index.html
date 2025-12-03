@@ -2,169 +2,70 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Jardine Meal Planner</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-
-  <!-- PWA -->
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#3bb273">
-
-  <!-- App icons (you provide the PNGs) -->
-  <link rel="apple-touch-icon" sizes="180x180" href="img/icon-192.png">
-
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=5">
+  <script defer src="app.js?v=5"></script>
 </head>
+
 <body>
-  <header class="app-header">
-    <h1>Jardine Meal Planner</h1>
-    <nav class="main-nav">
-      <button data-nav="weekly-view" class="nav-btn nav-btn--active">This Week</button>
-      <button data-nav="four-week-view" class="nav-btn">4-Week Plan</button>
-      <button data-nav="recipes-library-view" class="nav-btn">Recipes</button>
-      <button data-nav="import-view" class="nav-btn">Import</button>
+
+  <header>
+    <h1>🌿 Jardine Meal Planner</h1>
+    <nav>
+      <a href="#" id="nav-this-week">This Week</a>
+      <a href="#" id="nav-4week">4-Week Plan</a>
+      <a href="#" id="nav-recipes">Recipes</a>
+      <a href="#" id="nav-import">Import</a>
     </nav>
-    <div class="header-right">
-      <button id="theme-toggle" class="theme-toggle-btn" title="Toggle colour theme">🥕</button>
-    </div>
   </header>
 
-  <main>
-    <!-- WEEKLY VIEW -->
-    <section id="weekly-view" class="view view--active">
-      <div class="week-header">
-        <button id="prev-week" class="pill-btn">&lt;</button>
-        <div class="week-title">
-          <span id="current-week-label"></span>
-        </div>
-        <button id="next-week" class="pill-btn">&gt;</button>
-      </div>
+  <!-- WEEKLY CONTROLS -->
+  <section id="weekly-controls">
+    <button id="prev-week-btn">←</button>
+    <span id="week-label"></span>
+    <button id="next-week-btn">→</button>
+    <button id="weekly-ingredients-btn">Weekly Ingredients</button>
+  </section>
 
-      <div class="week-actions">
-        <button id="view-ingredients" class="primary-btn">
-          Weekly Ingredients
-        </button>
-      </div>
+  <!-- WEEK GRID -->
+  <section id="weekly-view">
+    <div id="weekly-grid"></div>
+  </section>
 
-      <div id="week-grid" class="week-grid">
-        <!-- Days injected here -->
-      </div>
+  <!-- 4-WEEK VIEW -->
+  <section id="four-week-view" class="hidden">
+    <div id="four-week-grid"></div>
+  </section>
 
-      <p class="hint">
-        Drag &amp; drop meals between days to rearrange. Use ✖ for “no meal” or 👵 for a Granny day.  
-        Tap an empty day to assign a recipe.
-      </p>
-    </section>
+  <!-- RECIPES LIST -->
+  <section id="recipes-view" class="hidden">
+    <h2>Recipe Library</h2>
+    <div id="recipes-list"></div>
+  </section>
 
-    <!-- FOUR-WEEK VIEW -->
-    <section id="four-week-view" class="view">
-      <h2>4-Week Plan</h2>
-      <p class="hint">
-        Drag weeks up and down to reorder your month.
-      </p>
-      <div id="four-week-container" class="four-week-container">
-        <!-- Draggable week cards injected here -->
-      </div>
-    </section>
+  <!-- IMPORT RECIPES -->
+  <section id="import-view" class="hidden">
+    <h2>Import Recipes</h2>
+    <textarea id="import-urls" placeholder="Paste BBC Good Food URLs here, one per line"></textarea>
+    <button id="import-btn">Import Recipes</button>
+    <p id="import-status"></p>
+  </section>
 
-    <!-- RECIPE DETAIL VIEW -->
-    <section id="recipe-detail-view" class="view">
-      <button class="back-btn" data-back="weekly-view">&larr; Back to Week</button>
-      <article id="recipe-detail-card" class="recipe-detail-card">
-        <h2 id="recipe-detail-title"></h2>
-        <div class="recipe-meta">
-          <span id="recipe-detail-tags" class="chip-row"></span>
-          <a id="recipe-detail-url" href="#" target="_blank" rel="noopener" class="chip-link">View original recipe</a>
-        </div>
-        <div class="recipe-detail-layout">
-          <div class="recipe-image-wrapper">
-            <img id="recipe-detail-image" src="img/placeholder-recipe.jpg" alt="Recipe image" />
-          </div>
-          <div class="recipe-ingredients">
-            <h3>Ingredients</h3>
-            <ul id="recipe-detail-ingredients"></ul>
-          </div>
-        </div>
-        <div class="recipe-instructions">
-          <h3>Method</h3>
-          <p id="recipe-detail-instructions"></p>
-        </div>
+  <!-- RECIPE DETAIL PAGE -->
+  <section id="recipe-detail-view" class="hidden">
+    <button id="back-to-week">Back</button>
+    <h2 id="recipe-title"></h2>
+    <img id="recipe-image" alt="">
+    <h3>Ingredients</h3>
+    <ul id="ingredients-list"></ul>
+    <h3>Method</h3>
+    <div id="method-steps"></div>
+  </section>
 
-        <div class="recipe-detail-actions">
-          <button id="recipe-clear-day" class="secondary-btn">Clear this day</button>
-          <button id="recipe-mark-granny" class="secondary-btn">Make this a Granny day</button>
-        </div>
-      </article>
-    </section>
-
-    <!-- INGREDIENTS VIEW -->
-    <section id="ingredients-view" class="view">
-      <button class="back-btn" data-back="weekly-view">&larr; Back to Week</button>
-      <h2>Ingredients for <span id="ingredients-week-label"></span></h2>
-      <div class="ingredients-actions">
-        <button id="generate-ingredients-ai" class="primary-btn">
-          Generate Smart Ingredients (AI)
-        </button>
-        <p class="hint">
-          AI will normalise units and merge duplicates across all meals this week.
-        </p>
-      </div>
-      <div id="ingredients-list-container" class="ingredients-list-container">
-        <!-- Aggregated list injected here -->
-      </div>
-    </section>
-
-    <!-- RECIPES LIBRARY VIEW -->
-    <section id="recipes-library-view" class="view">
-      <h2>Recipe Library</h2>
-      <p class="hint">
-        All recipes used in your planner. Mark recipes as disliked to get a warning if you try to add them again.
-      </p>
-
-      <div id="recipes-library-container" class="recipes-library-container">
-        <!-- Recipes injected here -->
-      </div>
-    </section>
-
-    <!-- IMPORT VIEW -->
-    <section id="import-view" class="view">
-      <h2>Import Recipes</h2>
-      <p class="hint">
-        Paste one or more BBC Good Food URLs (one per line). The app will fetch, parse and store the recipe with structured ingredients.
-      </p>
-
-      <textarea id="import-urls" rows="6" class="import-textarea"
-        placeholder="https://www.bbcgoodfood.com/recipes/example-1
-https://www.bbcgoodfood.com/recipes/example-2"></textarea>
-
-      <div class="import-actions">
-        <button id="import-btn" class="primary-btn">Import Recipes</button>
-      </div>
-
-      <div id="import-messages" class="import-messages"></div>
-    </section>
-  </main>
-
-  <!-- ASSIGN RECIPE MODAL -->
-  <div id="modal-backdrop" class="modal-backdrop hidden"></div>
-  <div id="assign-modal" class="modal hidden">
-    <div class="modal-inner">
-      <div class="modal-header">
-        <h3>Select a recipe</h3>
-        <button id="assign-modal-close" class="icon-btn">✖</button>
-      </div>
-      <p class="hint">
-        Tap a recipe to assign it to this day.
-      </p>
-      <div id="assign-modal-list" class="assign-modal-list">
-        <!-- Recipe options injected here -->
-      </div>
-    </div>
-  </div>
-
-  <footer class="app-footer">
-    <span>&copy; Jardine Meal Planner</span>
+  <footer>
+    © Jardine Meal Planner
   </footer>
 
-  <script src="app.js"></script>
 </body>
 </html>
