@@ -1,861 +1,1006 @@
 // ---- CONFIG ----
 
-// Supabase Edge Functions base URL
+// Supabase Edge Functions base URL + anon key (YOUR real values)
 const SUPABASE_FUNCTION_BASE_URL =
   "https://tzrmuferszuscavbujbc.supabase.co/functions/v1";
-
-// Public anon key from Supabase Settings → API (safe to expose in frontend)
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR6cm11ZmVyc3p1c2NhdmJ1amJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ3MTE0MDMsImV4cCI6MjA4MDI4NzQwM30.aRPM29TX1iv2dTRYQNxAGtu_LLAIbfzuKIWRcgNQaRE";
 
-// LocalStorage key (for offline fallback)
-const STORAGE_KEY = "jardineMealPlanner";
+// Local storage key
+const STORAGE_KEY = "jardine-meal-planner-state-v1";
 
-// ---- STATE ----
-
+// Global state
 let state = createInitialState();
-let ui = {
+const ui = {
   currentWeekIndex: 0,
-  currentContext: null // {weekIndex, dayIndex}
+  currentView: "weekly-view",
 };
+
+// Kill old service workers so the app always loads fresh
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    regs.forEach((reg) => reg.unregister());
+  });
+}
 
 // ---- INITIAL STATE ----
 
 function createInitialState() {
-  const days = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday"
-  ];
-  const weeks = [];
-
-  for (let w = 0; w < 4; w++) {
-    weeks.push({
-      id: `week-${w + 1}`,
-      label: `Week ${w + 1}`,
-      days: days.map((name, index) => ({
-        id: `${w}-${index}`,
-        name,
-        recipeId: null,
-        grannyDay: false
-      }))
-    });
-  }
-
+  const startOfWeek = getMonday(new Date());
   return {
-    weeks,
-    recipes: {}
+    weeks: [
+      {
+        id: `week-${startOfWeek.toISOString().slice(0, 10)}`,
+        startDate: startOfWeek.toISOString(),
+        days: [0, 1, 2, 3, 4, 5, 6].map((offset) => ({
+          date: new Date(startOfWeek.getTime() + offset * 86400000)
+            .toISOString()
+            .slice(0, 10),
+          recipeId: null,
+          isGrannyDay: false,
+        })),
+      },
+    ],
+    // recipes keyed by recipeId
+    recipes: {
+      // recipeId: {
+      //   id,
+      //   url,
+      //   title,
+      //   imageUrl,
+      //   ingredients: [string],
+      //   method: [string],  // step-by-step
+      //   disliked: false
+      // }
+    },
   };
 }
 
-// ---- LOCAL FALLBACK ----
+// ---- LOCAL STORAGE PERSISTENCE ----
 
 function loadStateFromLocal() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return createInitialState();
+    if (!raw) return;
     const parsed = JSON.parse(raw);
-    if (!parsed.weeks || !parsed.recipes) return createInitialState();
-    return parsed;
-  } catch {
-    return createInitialState();
+    if (parsed && parsed.weeks && parsed.recipes) {
+      state = parsed;
+    }
+  } catch (err) {
+    console.error("Failed to load local state", err);
   }
 }
 
-function saveStateLocal() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+function saveStateToLocal() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (err) {
+    console.error("Failed to save local state", err);
+  }
 }
 
-// ---- CLOUD SYNC (Supabase Edge Function: state) ----
+// ---- CLOUD SYNC (Supabase 'state' function) ----
 
 async function syncFromCloud() {
   try {
     const res = await fetch(`${SUPABASE_FUNCTION_BASE_URL}/state`, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+        Accept: "application/json",
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
       },
-      credentials: "omit"
     });
-    if (!res.ok) throw new Error("Cloud load failed");
-    const cloudState = await res.json();
-    if (cloudState.weeks && cloudState.recipes) {
-      state = cloudState;
+
+    if (!res.ok) {
+      console.warn("Cloud sync GET failed", await res.text());
+      return;
     }
-  } catch (e) {
-    console.warn("Using local state because cloud load failed:", e);
-    state = loadStateFromLocal();
+
+    const remote = await res.json();
+    if (remote && remote.weeks && remote.recipes) {
+      state = remote;
+      saveStateToLocal();
+      render();
+    }
+  } catch (err) {
+    console.error("Error syncing from cloud", err);
   }
 }
 
-let saveTimeout = null;
+let saveStateTimeout = null;
+function scheduleSaveState() {
+  saveStateToLocal();
+  if (saveStateTimeout) clearTimeout(saveStateTimeout);
 
-async function saveState() {
-  // Save locally for offline
-  saveStateLocal();
+  saveStateTimeout = setTimeout(saveStateToCloud, 800);
+}
 
-  // Debounce cloud save
-  if (saveTimeout) clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(async () => {
-    try {
-      await fetch(`${SUPABASE_FUNCTION_BASE_URL}/state`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify(state)
-      });
-    } catch (e) {
-      console.warn("Cloud save failed (will retry next change):", e);
+async function saveStateToCloud() {
+  try {
+    const res = await fetch(`${SUPABASE_FUNCTION_BASE_URL}/state`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify(state),
+    });
+
+    if (!res.ok) {
+      console.warn("Cloud sync POST failed", await res.text());
     }
-  }, 400);
+  } catch (err) {
+    console.error("Error saving to cloud", err);
+  }
 }
 
 // ---- UTILITIES ----
 
-function $(sel) {
-  return document.querySelector(sel);
+function $(selector) {
+  return document.querySelector(selector);
 }
 
 function createElement(tag, className, text) {
   const el = document.createElement(tag);
   if (className) el.className = className;
-  if (text != null) el.textContent = text;
+  if (text !== undefined && text !== null) el.textContent = text;
   return el;
 }
 
-function getCurrentWeek() {
-  return state.weeks[ui.currentWeekIndex];
-}
-
-function getRecipeById(id) {
-  if (!id) return null;
-  return state.recipes[id] || null;
+function getMonday(d) {
+  const date = new Date(d);
+  const day = date.getDay(); // 0 (Sun) - 6 (Sat)
+  const diff = (day === 0 ? -6 : 1) - day; // shift Sunday back
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
 }
 
 function generateRecipeId() {
-  return "r_" + Math.random().toString(36).slice(2, 10);
+  return `recipe-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// ---- VIEW SWITCHING ----
+function getRecipeById(id) {
+  return state.recipes[id] || null;
+}
+
+function ensureWeeksCoverFour() {
+  while (state.weeks.length < 4) {
+    const last = state.weeks[state.weeks.length - 1];
+    const lastStart = new Date(last.startDate);
+    const nextStart = new Date(lastStart.getTime() + 7 * 86400000);
+    state.weeks.push({
+      id: `week-${nextStart.toISOString().slice(0, 10)}`,
+      startDate: nextStart.toISOString(),
+      days: [0, 1, 2, 3, 4, 5, 6].map((offset) => ({
+        date: new Date(nextStart.getTime() + offset * 86400000)
+          .toISOString()
+          .slice(0, 10),
+        recipeId: null,
+        isGrannyDay: false,
+      })),
+    });
+  }
+}
+
+// ---- NAVIGATION ----
 
 function setActiveView(viewId) {
+  ui.currentView = viewId;
+
+  document.querySelectorAll(".view").forEach((v) => {
+    v.classList.toggle("hidden", v.id !== viewId);
+  });
+
   document
-    .querySelectorAll(".view")
-    .forEach(v => v.classList.remove("view--active"));
-  const view = document.getElementById(viewId);
-  if (view) view.classList.add("view--active");
+    .querySelectorAll('[data-nav-target]')
+    .forEach((btn) =>
+      btn.classList.toggle(
+        "active",
+        btn.getAttribute("data-nav-target") === viewId
+      )
+    );
 }
 
-function setActiveNavButton(viewId) {
-  document.querySelectorAll(".nav-btn").forEach(btn => {
-    btn.classList.toggle("nav-btn--active", btn.dataset.nav === viewId);
+function wireNavigation() {
+  document
+    .querySelectorAll("[data-nav-target]")
+    .forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const target = btn.getAttribute("data-nav-target");
+        setActiveView(target);
+        if (target === "weekly-view") {
+          renderWeeklyView();
+        } else if (target === "four-week-view") {
+          renderFourWeekView();
+        } else if (target === "recipes-view") {
+          renderRecipesLibrary();
+        }
+      })
+    );
+
+  document.querySelectorAll("[data-back]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const backTo = btn.getAttribute("data-back");
+      setActiveView(backTo);
+      if (backTo === "weekly-view") {
+        renderWeeklyView();
+      } else if (backTo === "four-week-view") {
+        renderFourWeekView();
+      } else if (backTo === "recipes-view") {
+        renderRecipesLibrary();
+      }
+    });
   });
 }
 
-// ---- WEEKLY VIEW RENDER ----
+// ---- WEEKLY VIEW ----
 
 let draggedDay = null;
 
 function renderWeeklyView() {
-  const week = getCurrentWeek();
-  $("#current-week-label").textContent = week.label;
+  ensureWeeksCoverFour();
+  const week = state.weeks[ui.currentWeekIndex];
 
-  const grid = $("#week-grid");
-  grid.innerHTML = "";
+  const container = $("#weekly-grid");
+  container.innerHTML = "";
+
+  $("#current-week-label").textContent = new Date(
+    week.startDate
+  ).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
 
   week.days.forEach((day, dayIndex) => {
-    const recipe = getRecipeById(day.recipeId);
-
     const card = createElement("div", "day-card");
-    card.draggable = true;
-    card.dataset.weekIndex = ui.currentWeekIndex;
+    card.setAttribute("draggable", "true");
     card.dataset.dayIndex = dayIndex;
 
-    card.addEventListener("dragstart", onDayDragStart);
-    card.addEventListener("dragover", onDayDragOver);
-    card.addEventListener("dragleave", onDayDragLeave);
-    card.addEventListener("drop", onDayDrop);
+    const dateLabel = createElement(
+      "div",
+      "day-date",
+      new Date(day.date).toLocaleDateString("en-GB", {
+        weekday: "short",
+        day: "numeric",
+      })
+    );
+    card.appendChild(dateLabel);
 
-    card.addEventListener("click", e => {
-      if (e.target.closest(".icon-btn")) return;
-      if (day.grannyDay || recipe) {
-        openDayDetail(ui.currentWeekIndex, dayIndex);
-      } else {
-        openAssignModal(ui.currentWeekIndex, dayIndex);
-      }
-    });
-
-    const header = createElement("div", "day-card-header");
-    const dayName = createElement("span", "day-name", day.name);
-    const badges = createElement("div", "day-badges");
-
-    if (day.grannyDay) {
-      badges.appendChild(
-        createElement("span", "badge badge--granny", "Granny day")
-      );
-    } else if (!recipe) {
-      badges.appendChild(
-        createElement("span", "badge badge--empty", "No meal")
-      );
+    if (day.isGrannyDay) {
+      const grannyLabel = createElement("div", "granny-label", "Granny day");
+      card.appendChild(grannyLabel);
     }
 
-    header.appendChild(dayName);
-    header.appendChild(badges);
+    if (day.recipeId) {
+      const recipe = getRecipeById(day.recipeId);
+      if (recipe) {
+        // Image on the day card
+        if (recipe.imageUrl) {
+          const img = createElement("img", "day-card-image");
+          img.src = recipe.imageUrl;
+          img.alt = recipe.title || "Meal image";
+          card.appendChild(img);
+        }
 
-    const title = createElement(
-      "div",
-      "day-title",
-      day.grannyDay
-        ? "Dinner at Granny's"
-        : recipe
-        ? recipe.title
-        : "Tap to choose a meal"
-    );
-    const subtitle = createElement(
-      "div",
-      "day-subtitle",
-      recipe && recipe.disliked ? "⚠ You marked this as disliked" : ""
-    );
+        const title = createElement("div", "day-title", recipe.title);
+        card.appendChild(title);
+      } else {
+        const missing = createElement(
+          "div",
+          "day-title muted",
+          "Recipe missing"
+        );
+        card.appendChild(missing);
+      }
+    } else if (!day.isGrannyDay) {
+      const empty = createElement(
+        "div",
+        "day-title muted",
+        "Click to assign"
+      );
+      card.appendChild(empty);
+    }
 
-    const actionsRow = createElement("div", "day-actions-row");
-    const clearBtn = createElement("button", "icon-btn", "✖");
-    clearBtn.title = "Clear this day";
-    clearBtn.addEventListener("click", e => {
-      e.stopPropagation();
-      clearDay(ui.currentWeekIndex, dayIndex);
+    // Click: open detail or assign
+    card.addEventListener("click", () => {
+      openDayDetail(ui.currentWeekIndex, dayIndex);
     });
 
-    const grannyBtn = createElement("button", "icon-btn", "👵");
-    grannyBtn.title = "Mark as Granny day";
-    grannyBtn.addEventListener("click", e => {
-      e.stopPropagation();
-      toggleGrannyDay(ui.currentWeekIndex, dayIndex);
+    // Right-click to toggle granny day
+    card.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      day.isGrannyDay = !day.isGrannyDay;
+      if (day.isGrannyDay) {
+        day.recipeId = null;
+      }
+      scheduleSaveState();
+      renderWeeklyView();
     });
 
-    actionsRow.appendChild(clearBtn);
-    actionsRow.appendChild(grannyBtn);
+    // Drag & drop
+    card.addEventListener("dragstart", (e) => {
+      draggedDay = { weekIndex: ui.currentWeekIndex, dayIndex };
+      e.dataTransfer.effectAllowed = "move";
+    });
 
-    card.appendChild(header);
-    card.appendChild(title);
-    if (subtitle.textContent) card.appendChild(subtitle);
-    card.appendChild(actionsRow);
+    card.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      card.classList.add("drag-over");
+    });
 
-    grid.appendChild(card);
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("drag-over");
+    });
+
+    card.addEventListener("drop", (e) => {
+      e.preventDefault();
+      card.classList.remove("drag-over");
+      if (!draggedDay) return;
+
+      const fromIndex = draggedDay.dayIndex;
+      const toIndex = dayIndex;
+      if (fromIndex === toIndex) return;
+
+      const days = week.days;
+      const tmp = days[fromIndex];
+      days[fromIndex] = days[toIndex];
+      days[toIndex] = tmp;
+
+      draggedDay = null;
+      scheduleSaveState();
+      renderWeeklyView();
+    });
+
+    container.appendChild(card);
   });
 }
 
-// ---- DRAG & DROP DAYS ----
+function wireWeeklyViewControls() {
+  $("#prev-week-btn").addEventListener("click", () => {
+    ui.currentWeekIndex = Math.max(0, ui.currentWeekIndex - 1);
+    renderWeeklyView();
+  });
 
-function onDayDragStart(e) {
-  const weekIndex = Number(e.currentTarget.dataset.weekIndex);
-  const dayIndex = Number(e.currentTarget.dataset.dayIndex);
-  draggedDay = { weekIndex, dayIndex };
-  e.dataTransfer.effectAllowed = "move";
+  $("#next-week-btn").addEventListener("click", () => {
+    ensureWeeksCoverFour();
+    ui.currentWeekIndex = Math.min(state.weeks.length - 1, ui.currentWeekIndex + 1);
+    renderWeeklyView();
+  });
+
+  $("#ingredients-btn").addEventListener("click", () => {
+    openIngredientsView(ui.currentWeekIndex);
+  });
 }
 
-function onDayDragOver(e) {
-  e.preventDefault();
-  const target = e.currentTarget;
-  if (!target.classList.contains("drag-over")) {
-    target.classList.add("drag-over");
-  }
-}
-
-function onDayDragLeave(e) {
-  e.currentTarget.classList.remove("drag-over");
-}
-
-function onDayDrop(e) {
-  e.preventDefault();
-  const target = e.currentTarget;
-  target.classList.remove("drag-over");
-  if (!draggedDay) return;
-
-  const fromWeek = draggedDay.weekIndex;
-  const fromDay = draggedDay.dayIndex;
-  const toWeek = Number(target.dataset.weekIndex);
-  const toDay = Number(target.dataset.dayIndex);
-
-  if (fromWeek !== toWeek) return;
-
-  const week = state.weeks[fromWeek];
-  const tmp = week.days[fromDay];
-  week.days[fromDay] = week.days[toDay];
-  week.days[toDay] = tmp;
-
-  draggedDay = null;
-  saveState();
-  renderWeeklyView();
-}
-
-// ---- DAY DETAIL ----
-
-function openDayDetail(weekIndex, dayIndex) {
-  const week = state.weeks[weekIndex];
-  const day = week.days[dayIndex];
-  ui.currentContext = { weekIndex, dayIndex };
-
-  if (day.grannyDay) {
-    $("#recipe-detail-title").textContent = "Dinner at Granny's";
-    $("#recipe-detail-tags").innerHTML = "";
-    $("#recipe-detail-tags").appendChild(
-      createElement("span", "chip", "Granny day")
-    );
-    $("#recipe-detail-url").style.display = "none";
-    $("#recipe-detail-image").src = "img/placeholder-recipe.jpg";
-    $("#recipe-detail-ingredients").innerHTML = "";
-    $("#recipe-detail-instructions").textContent =
-      "Relax, Granny's got this one covered. No cooking required!";
-  } else {
-    const recipe = getRecipeById(day.recipeId);
-    if (!recipe) {
-      $("#recipe-detail-title").textContent = "No meal selected";
-      $("#recipe-detail-tags").innerHTML = "";
-      $("#recipe-detail-url").style.display = "none";
-      $("#recipe-detail-image").src = "img/placeholder-recipe.jpg";
-      $("#recipe-detail-ingredients").innerHTML = "";
-      $("#recipe-detail-instructions").textContent =
-        "You haven't chosen a meal for this day yet. Use the Recipes tab to add recipes, then tap this day to assign one.";
-    } else {
-      $("#recipe-detail-title").textContent =
-        recipe.title || "Untitled recipe";
-
-      const tagsRow = $("#recipe-detail-tags");
-      tagsRow.innerHTML = "";
-      if (recipe.disliked) {
-        tagsRow.appendChild(createElement("span", "chip", "Disliked"));
-      }
-      if (recipe.url) {
-        tagsRow.appendChild(createElement("span", "chip", "Imported"));
-      }
-
-      const link = $("#recipe-detail-url");
-      if (recipe.url) {
-        link.href = recipe.url;
-        link.style.display = "inline-flex";
-      } else {
-        link.style.display = "none";
-      }
-
-      $("#recipe-detail-image").src =
-        recipe.imageUrl || "img/placeholder-recipe.jpg";
-
-      const list = $("#recipe-detail-ingredients");
-      list.innerHTML = "";
-      (recipe.ingredients || []).forEach(item => {
-        const li = document.createElement("li");
-        if (typeof item === "string") {
-          li.textContent = item;
-        } else {
-          const qty = item.quantity ? `${item.quantity} ` : "";
-          const unit = item.unit ? `${item.unit} ` : "";
-          li.textContent = `${qty}${unit}${item.name}`;
-        }
-        list.appendChild(li);
-      });
-
-      $("#recipe-detail-instructions").textContent =
-        recipe.instructions ||
-        "Method not added yet. You can keep the full method in the original BBC Good Food page.";
-    }
-  }
-
-  $("#recipe-clear-day").onclick = () => {
-    if (!ui.currentContext) return;
-    clearDay(ui.currentContext.weekIndex, ui.currentContext.dayIndex);
-    setActiveView("weekly-view");
-  };
-
-  $("#recipe-mark-granny").onclick = () => {
-    if (!ui.currentContext) return;
-    markGrannyDay(ui.currentContext.weekIndex, ui.currentContext.dayIndex);
-    setActiveView("weekly-view");
-  };
-
-  setActiveView("recipe-detail-view");
-}
-
-// ---- CLEAR / GRANNY DAY ----
-
-function clearDay(weekIndex, dayIndex) {
-  const day = state.weeks[weekIndex].days[dayIndex];
-  day.recipeId = null;
-  day.grannyDay = false;
-  saveState();
-  renderWeeklyView();
-}
-
-function markGrannyDay(weekIndex, dayIndex) {
-  const day = state.weeks[weekIndex].days[dayIndex];
-  day.grannyDay = true;
-  day.recipeId = null;
-  saveState();
-  renderWeeklyView();
-}
-
-function toggleGrannyDay(weekIndex, dayIndex) {
-  const day = state.weeks[weekIndex].days[dayIndex];
-  day.grannyDay = !day.grannyDay;
-  if (day.grannyDay) day.recipeId = null;
-  saveState();
-  renderWeeklyView();
-}
-
-// ---- FOUR WEEK VIEW ----
+// ---- FOUR-WEEK VIEW ----
 
 let draggedWeekIndex = null;
 
 function renderFourWeekView() {
-  const container = $("#four-week-container");
+  ensureWeeksCoverFour();
+  const container = $("#four-week-grid");
   container.innerHTML = "";
 
   state.weeks.forEach((week, index) => {
     const card = createElement("div", "week-card");
-    card.draggable = true;
+    card.setAttribute("draggable", "true");
     card.dataset.weekIndex = index;
 
-    card.addEventListener("dragstart", onWeekDragStart);
-    card.addEventListener("dragover", onWeekDragOver);
-    card.addEventListener("dragleave", onWeekDragLeave);
-    card.addEventListener("drop", onWeekDrop);
+    const start = new Date(week.startDate);
+    const end = new Date(start.getTime() + 6 * 86400000);
 
-    const header = createElement("div", "week-card-header");
-    const title = createElement("div", "week-card-title", week.label);
-    const summary = createElement("div", "week-card-summary");
-    const mealsCount = week.days.filter(d => d.recipeId || d.grannyDay).length;
-    summary.textContent = `${mealsCount}/7 days planned`;
-    header.appendChild(title);
-    header.appendChild(summary);
-
-    const list = createElement("div", "week-card-summary");
-    list.textContent = week.days
-      .map(d => {
-        const recipe = getRecipeById(d.recipeId);
-        if (d.grannyDay) return `${d.name}: Granny day`;
-        return `${d.name}: ${recipe ? recipe.title : "—"}`;
-      })
-      .join(" · ");
-
+    const header = createElement(
+      "div",
+      "week-card-header",
+      `${start.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+      })} - ${end.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+      })}`
+    );
     card.appendChild(header);
+
+    const list = createElement("ul", "week-card-list");
+    week.days.forEach((day) => {
+      const li = document.createElement("li");
+      const dateStr = new Date(day.date).toLocaleDateString("en-GB", {
+        weekday: "short",
+        day: "numeric",
+      });
+
+      if (day.isGrannyDay) {
+        li.textContent = `${dateStr}: Granny day`;
+      } else if (day.recipeId) {
+        const recipe = getRecipeById(day.recipeId);
+        li.textContent = recipe
+          ? `${dateStr}: ${recipe.title}`
+          : `${dateStr}: [missing recipe]`;
+      } else {
+        li.textContent = `${dateStr}: [empty]`;
+      }
+
+      list.appendChild(li);
+    });
     card.appendChild(list);
+
+    card.addEventListener("click", () => {
+      ui.currentWeekIndex = index;
+      setActiveView("weekly-view");
+      renderWeeklyView();
+    });
+
+    card.addEventListener("dragstart", (e) => {
+      draggedWeekIndex = index;
+      e.dataTransfer.effectAllowed = "move";
+    });
+
+    card.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      card.classList.add("drag-over");
+    });
+
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("drag-over");
+    });
+
+    card.addEventListener("drop", (e) => {
+      e.preventDefault();
+      card.classList.remove("drag-over");
+      if (draggedWeekIndex === null) return;
+      if (draggedWeekIndex === index) return;
+
+      const temp = state.weeks[draggedWeekIndex];
+      state.weeks[draggedWeekIndex] = state.weeks[index];
+      state.weeks[index] = temp;
+
+      draggedWeekIndex = null;
+      scheduleSaveState();
+      renderFourWeekView();
+    });
+
     container.appendChild(card);
   });
 }
 
-function onWeekDragStart(e) {
-  draggedWeekIndex = Number(e.currentTarget.dataset.weekIndex);
-  e.dataTransfer.effectAllowed = "move";
-}
+// ---- DAY DETAIL / RECIPE DETAIL ----
 
-function onWeekDragOver(e) {
-  e.preventDefault();
-  e.currentTarget.classList.add("drag-over");
-}
-
-function onWeekDragLeave(e) {
-  e.currentTarget.classList.remove("drag-over");
-}
-
-function onWeekDrop(e) {
-  e.preventDefault();
-  const target = e.currentTarget;
-  target.classList.remove("drag-over");
-  if (draggedWeekIndex == null) return;
-
-  const toIndex = Number(target.dataset.weekIndex);
-  if (draggedWeekIndex === toIndex) return;
-
-  const [moved] = state.weeks.splice(draggedWeekIndex, 1);
-  state.weeks.splice(toIndex, 0, moved);
-
-  draggedWeekIndex = null;
-  saveState();
-  renderFourWeekView();
-  renderWeeklyView();
-}
-
-// ---- INGREDIENTS VIEW (AI) ----
-
-async function openIngredientsView() {
-  const weekIndex = ui.currentWeekIndex;
+function openDayDetail(weekIndex, dayIndex) {
   const week = state.weeks[weekIndex];
+  const day = week.days[dayIndex];
 
-  $("#ingredients-week-label").textContent = week.label;
-
-  const listContainer = $("#ingredients-list-container");
-  listContainer.innerHTML = "";
-  const ul = createElement("ul", "ingredients-list");
-  ul.appendChild(
-    createElement(
-      "li",
-      null,
-      'Click "Generate Smart Ingredients (AI)" to fetch the list.'
-    )
+  $("#day-detail-date").textContent = new Date(day.date).toLocaleDateString(
+    "en-GB",
+    { weekday: "long", day: "numeric", month: "long" }
   );
-  listContainer.appendChild(ul);
 
-  setActiveView("ingredients-view");
+  const grannyToggle = $("#day-detail-granny-toggle");
+  grannyToggle.checked = day.isGrannyDay;
+  grannyToggle.onchange = () => {
+    day.isGrannyDay = grannyToggle.checked;
+    if (day.isGrannyDay) {
+      day.recipeId = null;
+    }
+    scheduleSaveState();
+    renderWeeklyView();
+  };
+
+  const container = $("#day-detail-content");
+  container.innerHTML = "";
+
+  if (day.isGrannyDay) {
+    const msg = createElement("p", "muted", "Granny is providing dinner.");
+    container.appendChild(msg);
+  } else if (day.recipeId) {
+    const recipe = getRecipeById(day.recipeId);
+    if (recipe) {
+      renderRecipeDetail(recipe);
+    } else {
+      const missing = createElement(
+        "p",
+        "muted",
+        "Recipe not found. Please reassign."
+      );
+      container.appendChild(missing);
+    }
+  } else {
+    const msg = createElement(
+      "p",
+      "muted",
+      "No recipe assigned. Use the button below to choose one."
+    );
+    container.appendChild(msg);
+  }
+
+  const assignBtn = $("#day-detail-assign-btn");
+  assignBtn.onclick = () => openAssignModal(weekIndex, dayIndex);
+
+  setActiveView("day-detail-view");
 }
 
-async function generateSmartIngredientsForWeek() {
-  const weekIndex = ui.currentWeekIndex;
+// Used by weekly view AND by library “View” button
+function renderRecipeDetail(recipe) {
+  const container = $("#day-detail-content");
+  container.innerHTML = "";
+
+  const title = createElement("h2", "recipe-title", recipe.title);
+  container.appendChild(title);
+
+  if (recipe.imageUrl) {
+    const img = createElement("img", "recipe-detail-image");
+    img.src = recipe.imageUrl;
+    img.alt = recipe.title || "Meal photo";
+    container.appendChild(img);
+  }
+
+  // Ingredients
+  const ingHeading = createElement("h3", null, "Ingredients");
+  container.appendChild(ingHeading);
+
+  const ingredientsBox = createElement("div", "recipe-ingredients");
+  const ingredientsList = Array.isArray(recipe.ingredients)
+    ? recipe.ingredients
+    : [];
+
+  if (ingredientsList.length) {
+    const ul = document.createElement("ul");
+    ingredientsList.forEach((line) => {
+      const li = document.createElement("li");
+      li.textContent = line;
+      ul.appendChild(li);
+    });
+    ingredientsBox.appendChild(ul);
+  } else {
+    ingredientsBox.textContent = "Ingredients not available for this recipe.";
+  }
+  container.appendChild(ingredientsBox);
+
+  // Method (as steps)
+  const methodHeading = createElement("h3", null, "Method");
+  container.appendChild(methodHeading);
+
+  const methodBox = createElement("div", "recipe-method");
+  const steps = Array.isArray(recipe.method)
+    ? recipe.method
+    : recipe.instructions
+    ? [recipe.instructions]
+    : [];
+
+  if (steps.length) {
+    const ol = document.createElement("ol");
+    steps.forEach((step) => {
+      if (!step) return;
+      const li = document.createElement("li");
+      li.textContent = step.replace(/\s+/g, " ").trim();
+      ol.appendChild(li);
+    });
+    methodBox.appendChild(ol);
+  } else {
+    methodBox.textContent = "Method not available for this recipe.";
+  }
+  container.appendChild(methodBox);
+}
+
+// ---- ASSIGN MODAL ----
+
+function openAssignModal(weekIndex, dayIndex) {
+  const modal = $("#assign-modal");
+  const list = $("#assign-modal-list");
+  list.innerHTML = "";
+
+  const entries = Object.values(state.recipes);
+  if (!entries.length) {
+    const li = createElement(
+      "li",
+      "muted",
+      "No recipes yet. Import some from BBC Good Food first."
+    );
+    list.appendChild(li);
+  } else {
+    entries.forEach((recipe) => {
+      const li = createElement("li", "assign-item");
+      const title = createElement("span", "assign-title", recipe.title);
+      if (recipe.disliked) {
+        title.classList.add("disliked");
+      }
+      li.appendChild(title);
+
+      li.addEventListener("click", () => {
+        const week = state.weeks[weekIndex];
+        week.days[dayIndex].recipeId = recipe.id;
+        week.days[dayIndex].isGrannyDay = false;
+        closeAssignModal();
+        scheduleSaveState();
+        renderWeeklyView();
+        openDayDetail(weekIndex, dayIndex);
+      });
+
+      list.appendChild(li);
+    });
+  }
+
+  modal.classList.add("open");
+}
+
+function closeAssignModal() {
+  $("#assign-modal").classList.remove("open");
+}
+
+// ---- RECIPES LIBRARY ----
+
+function renderRecipesLibrary() {
+  const container = $("#recipes-list");
+  container.innerHTML = "";
+
+  const recipes = Object.values(state.recipes);
+  if (!recipes.length) {
+    container.appendChild(
+      createElement(
+        "p",
+        "muted",
+        "No recipes yet. Paste some BBC Good Food URLs into the Import section."
+      )
+    );
+    return;
+  }
+
+  recipes.sort((a, b) => a.title.localeCompare(b.title));
+
+  recipes.forEach((recipe) => {
+    const card = createElement("div", "recipe-card");
+
+    if (recipe.imageUrl) {
+      const img = createElement("img", "recipe-card-image");
+      img.src = recipe.imageUrl;
+      img.alt = recipe.title || "Meal photo";
+      card.appendChild(img);
+    }
+
+    const title = createElement("h3", "recipe-card-title", recipe.title);
+    if (recipe.disliked) title.classList.add("disliked");
+    card.appendChild(title);
+
+    const actions = createElement("div", "recipe-card-actions");
+
+    // View button – opens recipe detail view
+    const viewBtn = createElement("button", "btn-secondary", "View");
+    viewBtn.addEventListener("click", () => {
+      renderRecipeDetail(recipe);
+      setActiveView("day-detail-view");
+    });
+    actions.appendChild(viewBtn);
+
+    const dislikeBtn = createElement(
+      "button",
+      "btn-secondary",
+      recipe.disliked ? "Unmark dislike" : "Mark disliked"
+    );
+    dislikeBtn.addEventListener("click", () => {
+      recipe.disliked = !recipe.disliked;
+      scheduleSaveState();
+      renderRecipesLibrary();
+    });
+    actions.appendChild(dislikeBtn);
+
+    const removeBtn = createElement("button", "btn-danger", "Remove");
+    removeBtn.addEventListener("click", () => {
+      if (!confirm("Remove this recipe from your library?")) return;
+
+      // Clear it from any days
+      state.weeks.forEach((week) => {
+        week.days.forEach((day) => {
+          if (day.recipeId === recipe.id) {
+            day.recipeId = null;
+          }
+        });
+      });
+
+      delete state.recipes[recipe.id];
+      scheduleSaveState();
+      renderRecipesLibrary();
+      renderWeeklyView();
+    });
+    actions.appendChild(removeBtn);
+
+    card.appendChild(actions);
+    container.appendChild(card);
+  });
+}
+
+// ---- IMPORT VIEW (BBC Good Food) ----
+
+async function handleImport() {
+  const textarea = $("#import-urls");
+  const raw = textarea.value.trim();
+  if (!raw) {
+    alert("Paste at least one BBC Good Food URL.");
+    return;
+  }
+
+  const urls = raw
+    .split(/\s+/)
+    .map((u) => u.trim())
+    .filter(Boolean);
+
+  if (!urls.length) {
+    alert("No valid URLs found.");
+    return;
+  }
+
+  $("#import-status").textContent = "Importing...";
+  $("#import-status").classList.remove("error");
+  $("#import-status").classList.remove("success");
+
+  try {
+    for (const url of urls) {
+      const res = await fetch(
+        `${SUPABASE_FUNCTION_BASE_URL}/import-recipe`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ url }),
+        }
+      );
+
+      if (!res.ok) {
+        console.error("Import failed", await res.text());
+        throw new Error("Import function error");
+      }
+
+      const data = await res.json();
+
+      // ---- Parse BBC Good Food JSON ----
+      // Prefer schema.recipeIngredient + schema.recipeInstructions
+      const schema = data.schema || {};
+      const schemaIngredients = Array.isArray(schema.recipeIngredient)
+        ? schema.recipeIngredient
+        : [];
+      const schemaInstructions = Array.isArray(schema.recipeInstructions)
+        ? schema.recipeInstructions
+        : [];
+
+      const ingredients = schemaIngredients.length
+        ? schemaIngredients
+        : extractIngredientsFromLegacy(data);
+
+      const method = schemaInstructions.length
+        ? schemaInstructions
+            .map((step) =>
+              typeof step === "string"
+                ? step
+                : step?.text || ""
+            )
+            .filter(Boolean)
+        : extractMethodFromLegacy(data);
+
+      const title =
+        schema.name ||
+        data.title ||
+        data.siteTitle ||
+        "Untitled recipe";
+
+      const imageUrl =
+        (Array.isArray(schema.image) && schema.image[0]?.url) ||
+        data.image?.url ||
+        data.image?.[0]?.url ||
+        null;
+
+      const sourceUrl =
+        data.canonicalUrl || data.pageUrl || url;
+
+      // ---- Store in state.recipes ----
+      // Use canonical URL as id if possible, else random
+      const id =
+        sourceUrl && sourceUrl.startsWith("http")
+          ? sourceUrl
+          : generateRecipeId();
+
+      if (!state.recipes[id]) {
+        state.recipes[id] = {
+          id,
+          url: sourceUrl,
+          title,
+          imageUrl,
+          ingredients,
+          method,
+          disliked: false,
+        };
+      }
+    }
+
+    scheduleSaveState();
+    renderRecipesLibrary();
+    renderWeeklyView();
+
+    $("#import-status").textContent =
+      "Imported successfully. You can now assign these recipes.";
+    $("#import-status").classList.add("success");
+  } catch (err) {
+    console.error(err);
+    $("#import-status").textContent =
+      "Import failed. Check the console for details.";
+    $("#import-status").classList.add("error");
+  }
+}
+
+function extractIngredientsFromLegacy(data) {
+  // Older structure: data.ingredients = [{ heading, ingredients: [{ ingredientText, quantityText, note }]}]
+  if (!data.ingredients || !Array.isArray(data.ingredients)) return [];
+  const lines = [];
+  data.ingredients.forEach((group) => {
+    if (!Array.isArray(group.ingredients)) return;
+    group.ingredients.forEach((ing) => {
+      const qty = ing.quantityText || "";
+      const name = ing.ingredientText || "";
+      const note = ing.note || "";
+      const parts = [qty, name, note].map((p) => p.trim()).filter(Boolean);
+      if (parts.length) {
+        lines.push(parts.join(" "));
+      }
+    });
+  });
+  return lines;
+}
+
+function extractMethodFromLegacy(data) {
+  // Older structure: data.methodSteps = [{ content: [{ data: { value: "<p>...</p>"}}]}]
+  if (!data.methodSteps || !Array.isArray(data.methodSteps)) return [];
+  const steps = [];
+  data.methodSteps.forEach((step) => {
+    if (!Array.isArray(step.content)) return;
+    step.content.forEach((chunk) => {
+      const htmlVal = chunk?.data?.value || "";
+      if (!htmlVal) return;
+      const text = htmlVal
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (text) steps.push(text);
+    });
+  });
+  return steps;
+}
+
+// ---- INGREDIENTS VIEW (AI AGGREGATOR) ----
+
+async function openIngredientsView(weekIndex) {
   const week = state.weeks[weekIndex];
 
-  const recipes = week.days
-    .map(d => getRecipeById(d.recipeId))
-    .filter(Boolean)
-    .map(r => ({
-      title: r.title,
-      ingredients: r.ingredients || r.ingredientsRaw || []
-    }));
+  const container = $("#ingredients-list");
+  const status = $("#ingredients-status");
 
-  const listContainer = $("#ingredients-list-container");
-  const ul = createElement("ul", "ingredients-list");
-  ul.innerHTML = "";
-  ul.appendChild(createElement("li", null, "Asking AI…"));
-  listContainer.innerHTML = "";
-  listContainer.appendChild(ul);
+  container.innerHTML = "";
+  status.textContent = "Generating ingredients list…";
+  status.classList.remove("error");
+  status.classList.remove("success");
 
-  if (!recipes.length) {
-    ul.innerHTML = "";
-    ul.appendChild(createElement("li", null, "No recipes for this week yet."));
+  // Collect recipes for that week
+  const recipesForWeek = [];
+  week.days.forEach((day) => {
+    if (day.recipeId && !day.isGrannyDay) {
+      const recipe = getRecipeById(day.recipeId);
+      if (recipe) recipesForWeek.push(recipe);
+    }
+  });
+
+  if (!recipesForWeek.length) {
+    status.textContent =
+      "No recipes assigned for this week.";
     return;
   }
 
   try {
-const res = await fetch(`${SUPABASE_FUNCTION_BASE_URL}/import-recipe`, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${SUPABASE_ANON_KEY}`
-  },
-  body: JSON.stringify({ urls: [url] })
-});
-  
-    );
-    if (!res.ok) throw new Error("AI aggregation failed");
-    const aggregated = await res.json();
+    const payload = {
+      recipes: recipesForWeek.map((r) => ({
+        title: r.title,
+        ingredients: r.ingredients || [],
+      })),
+    };
 
-    listContainer.innerHTML = "";
-    const list = createElement("ul", "ingredients-list");
-
-    aggregated.forEach(item => {
-      const qty = item.quantity != null ? `${item.quantity} ` : "";
-      const unit = item.unit ? `${item.unit} ` : "";
-      const li = createElement("li", null, `${qty}${unit}${item.name}`);
-      list.appendChild(li);
-    });
-
-    listContainer.appendChild(list);
-  } catch (e) {
-    console.error(e);
-    listContainer.innerHTML = "";
-    const errList = createElement("ul", "ingredients-list");
-    errList.appendChild(
-      createElement(
-        "li",
-        null,
-        "AI ingredients generation failed. Please try again later."
-      )
-    );
-    listContainer.appendChild(errList);
-  }
-}
-
-// ---- RECIPE LIBRARY ----
-
-function renderRecipesLibrary() {
-  const container = $("#recipes-library-container");
-  container.innerHTML = "";
-
-  const ids = Object.keys(state.recipes);
-  if (!ids.length) {
-    container.appendChild(
-      createElement(
-        "p",
-        null,
-        "No recipes yet. Import some BBC Good Food links on the Import tab."
-      )
-    );
-    return;
-  }
-
-  ids.forEach(id => {
-    const recipe = state.recipes[id];
-
-    const card = createElement("div", "recipe-card");
-    const title = createElement(
-      "div",
-      "recipe-card-title",
-      recipe.title || "Untitled recipe"
-    );
-    const url = createElement(
-      "div",
-      "recipe-card-url",
-      recipe.url || "No URL saved"
-    );
-    card.appendChild(title);
-    card.appendChild(url);
-
-    const actions = createElement("div", "recipe-card-actions");
-
-    const dislikeBtn = createElement(
-      "button",
-      "toggle-disliked" + (recipe.disliked ? " toggle-disliked--on" : ""),
-      recipe.disliked ? "Disliked" : "Mark disliked"
-    );
-    dislikeBtn.addEventListener("click", () => {
-      recipe.disliked = !recipe.disliked;
-      saveState();
-      renderRecipesLibrary();
-      renderWeeklyView();
-    });
-
-    const removeBtn = createElement("button", "remove-recipe-btn", "Remove");
-    removeBtn.addEventListener("click", () => {
-      if (
-        !confirm(
-          "Remove this recipe from the library? (Existing planned days keep their label.)"
-        )
-      )
-        return;
-      delete state.recipes[id];
-      saveState();
-      renderRecipesLibrary();
-      renderWeeklyView();
-    });
-
-    actions.appendChild(dislikeBtn);
-    actions.appendChild(removeBtn);
-    card.appendChild(actions);
-
-    container.appendChild(card);
-  });
-}
-
-// ---- IMPORT VIEW (BBC Good Food via edge function) ----
-
-async function handleImport() {
-  const textarea = $("#import-urls");
-  const messages = $("#import-messages");
-  messages.textContent = "";
-
-  const urls = textarea.value
-    .split("\n")
-    .map(l => l.trim())
-    .filter(Boolean);
-
-  if (!urls.length) {
-    messages.textContent = "No URLs found. Paste at least one BBC Good Food link.";
-    return;
-  }
-
-  messages.textContent = "Importing recipes…";
-
-  let addedCount = 0;
-  for (const url of urls) {
-    try {
-      const res = await fetch(`${SUPABASE_FUNCTION_BASE_URL}/import-recipe`, {
+    const res = await fetch(
+      `${SUPABASE_FUNCTION_BASE_URL}/aggregate-ingredients`,
+      {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
         },
-        body: JSON.stringify({ url })
-      });
-      if (!res.ok) throw new Error("Import failed");
+        body: JSON.stringify(payload),
+      }
+    );
 
-      const data = await res.json();
-
-      // Check for existing by URL
-      const exists = Object.values(state.recipes).some(r => r.url === data.url);
-      if (exists) continue;
-
-      const id = generateRecipeId();
-      state.recipes[id] = {
-        id,
-        url: data.url,
-        title: data.title || "New recipe",
-        imageUrl: data.imageUrl || "",
-        ingredients: data.ingredients || [],
-        ingredientsRaw: data.ingredientsRaw || "",
-        instructions: data.instructions || "",
-        disliked: false
-      };
-      addedCount++;
-    } catch (e) {
-      console.error("Import failed for", url, e);
+    if (!res.ok) {
+      console.error(await res.text());
+      throw new Error("AI function error");
     }
-  }
 
-  saveState();
-  renderRecipesLibrary();
+    const data = await res.json();
+    // Expecting: { items: [{ name, quantity, unit, notes }], rawText }
+    container.innerHTML = "";
 
-  messages.textContent = addedCount
-    ? `Imported ${addedCount} recipe${addedCount > 1 ? "s" : ""}.`
-    : "No new recipes were imported (they may already exist).";
-}
-
-// ---- ASSIGN RECIPE MODAL ----
-
-let modalWeekIndex = null;
-let modalDayIndex = null;
-
-function openAssignModal(weekIndex, dayIndex) {
-  modalWeekIndex = weekIndex;
-  modalDayIndex = dayIndex;
-
-  const backdrop = $("#modal-backdrop");
-  const modal = $("#assign-modal");
-  const list = $("#assign-modal-list");
-
-  list.innerHTML = "";
-
-  const recipeIds = Object.keys(state.recipes);
-  if (!recipeIds.length) {
-    list.appendChild(createElement("p", null, "No recipes yet. Import some first."));
-  } else {
-    recipeIds.forEach(id => {
-      const recipe = state.recipes[id];
-      const item = createElement("div", "assign-item");
-      const title = createElement(
-        "div",
-        "assign-item-title",
-        recipe.title || "Untitled"
-      );
-      const url = createElement(
-        "div",
-        "assign-item-url",
-        recipe.url || ""
-      );
-      item.appendChild(title);
-      if (recipe.url) item.appendChild(url);
-
-      item.addEventListener("click", () => {
-        if (recipe.disliked) {
-          const proceed = confirm(
-            "Don't you remember you didn't like this! Use it anyway?"
-          );
-          if (!proceed) return;
-        }
-        assignRecipeToDay(id, modalWeekIndex, modalDayIndex);
-        closeAssignModal();
+    if (Array.isArray(data.items) && data.items.length) {
+      const list = document.createElement("ul");
+      data.items.forEach((item) => {
+        const li = document.createElement("li");
+        const qtyPart =
+          item.quantity || item.unit
+            ? `${item.quantity || ""} ${item.unit || ""} `
+            : "";
+        const notePart = item.notes ? ` (${item.notes})` : "";
+        li.textContent = `${qtyPart}${item.name}${notePart}`.trim();
+        list.appendChild(li);
       });
+      container.appendChild(list);
+    } else if (data.rawText) {
+      const pre = document.createElement("pre");
+      pre.textContent = data.rawText;
+      container.appendChild(pre);
+    } else {
+      container.textContent =
+        "No ingredients returned from AI.";
+    }
 
-      list.appendChild(item);
-    });
+    status.textContent =
+      "Ingredients list generated (AI normalised quantities).";
+    status.classList.add("success");
+  } catch (err) {
+    console.error(err);
+    status.textContent =
+      "Failed to generate ingredients list. Check console.";
+    status.classList.add("error");
   }
 
-  backdrop.classList.add("show");
-  modal.classList.add("show");
+  setActiveView("ingredients-view");
 }
 
-function closeAssignModal() {
-  $("#modal-backdrop").classList.remove("show");
-  $("#assign-modal").classList.remove("show");
-  modalWeekIndex = null;
-  modalDayIndex = null;
-}
+// ---- IMPORT VIEW WIRING ----
 
-function assignRecipeToDay(recipeId, weekIndex, dayIndex) {
-  const day = state.weeks[weekIndex].days[dayIndex];
-  day.recipeId = recipeId;
-  day.grannyDay = false;
-  saveState();
-  renderWeeklyView();
-}
-
-// ---- THEME TOGGLE ----
-
-function initTheme() {
-  const saved = localStorage.getItem("jardineTheme") || "default";
-  if (saved === "pastel") {
-    document.body.classList.add("theme-pastel");
-  }
-
-  $("#theme-toggle").addEventListener("click", () => {
-    document.body.classList.toggle("theme-pastel");
-    const mode = document.body.classList.contains("theme-pastel")
-      ? "pastel"
-      : "default";
-    localStorage.setItem("jardineTheme", mode);
+function wireImportView() {
+  $("#import-btn").addEventListener("click", () => {
+    handleImport();
   });
 }
 
-// ---- NAV / EVENTS ----
+// ---- MODAL WIRING ----
 
-function initNav() {
-  document.querySelectorAll(".nav-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const viewId = btn.dataset.nav;
-      setActiveView(viewId);
-      setActiveNavButton(viewId);
-      if (viewId === "weekly-view") renderWeeklyView();
-      if (viewId === "four-week-view") renderFourWeekView();
-      if (viewId === "recipes-library-view") renderRecipesLibrary();
-    });
-  });
-
-  document.querySelectorAll(".back-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const backView = btn.dataset.back || "weekly-view";
-      setActiveView(backView);
-      setActiveNavButton(backView);
-      if (backView === "weekly-view") renderWeeklyView();
-    });
-  });
-
-  $("#prev-week").addEventListener("click", () => {
-    ui.currentWeekIndex =
-      (ui.currentWeekIndex + state.weeks.length - 1) % state.weeks.length;
-    renderWeeklyView();
-  });
-
-  $("#next-week").addEventListener("click", () => {
-    ui.currentWeekIndex =
-      (ui.currentWeekIndex + 1) % state.weeks.length;
-    renderWeeklyView();
-  });
-
-  $("#view-ingredients").addEventListener("click", () =>
-    openIngredientsView()
-  );
-  $("#generate-ingredients-ai").addEventListener("click", () =>
-    generateSmartIngredientsForWeek()
-  );
-  $("#import-btn").addEventListener("click", handleImport);
-
-  $("#modal-backdrop").addEventListener("click", closeAssignModal);
+function wireModals() {
   $("#assign-modal-close").addEventListener("click", closeAssignModal);
+
+  $("#assign-modal").addEventListener("click", (e) => {
+    if (e.target.id === "assign-modal") {
+      closeAssignModal();
+    }
+  });
 }
 
-// ---- SERVICE WORKER (PWA) ----
+// ---- INITIALISATION ----
 
-function initServiceWorker() {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("service-worker.js").catch(err => {
-      console.warn("Service worker registration failed:", err);
-    });
+function render() {
+  if (ui.currentView === "weekly-view") {
+    renderWeeklyView();
+  } else if (ui.currentView === "four-week-view") {
+    renderFourWeekView();
+  } else if (ui.currentView === "recipes-view") {
+    renderRecipesLibrary();
   }
 }
-
-// ---- INIT ----
 
 document.addEventListener("DOMContentLoaded", async () => {
-  initNav();
-  initTheme();
-  initServiceWorker();
+  loadStateFromLocal();
+  wireNavigation();
+  wireWeeklyViewControls();
+  wireImportView();
+  wireModals();
 
-  // Load local quickly, then sync from cloud
-  state = loadStateFromLocal();
+  setActiveView("weekly-view");
   renderWeeklyView();
 
-  await syncFromCloud();
-  renderWeeklyView();
+  // Try to sync from cloud but don't block UI
+  syncFromCloud();
 });
